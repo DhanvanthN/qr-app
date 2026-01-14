@@ -1,189 +1,383 @@
 from kivy.app import App
+from kivy.lang import Builder
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.image import Image
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.uix.widget import Widget
 from kivy.core.window import Window
-from kivy.utils import platform
+from kivy.utils import get_color_from_hex
+from kivy.graphics import Color, Ellipse, Rectangle, Line, RoundedRectangle
 from kivy.clock import Clock
+from kivy.animation import Animation
+from kivy.metrics import dp
+from kivy.properties import ListProperty, StringProperty, NumericProperty
 import qrcode
 import os
-from kivy.graphics import Color, Rectangle, RoundedRectangle
+import random
+from kivy.utils import platform
 
-# Set window size for PC testing to resemble a phone
+# Set a mobile-friendly size for desktop testing
 if platform not in ('android', 'ios'):
-    Window.size = (400, 700)
+    Window.size = (400, 800)
 
-class QRCodeApp(App):
-    def build(self):
-        self.title = "Dhanvanth's QR Code"
-        self.icon = 'icon.png'
+# --- THEMES ---
+THEMES = {
+    'CYBER_BLUE': {
+        'bg_top': '#050510', 'bg_bot': '#0f172a',
+        'accent': '#00f0ff', 'glow': '#00f0ff',
+        'input_bg': '#1e1b4b', 'fg': '#ffffff'
+    },
+    'NEON_PINK': {
+        'bg_top': '#1a0510', 'bg_bot': '#2a0f1b',
+        'accent': '#d946ef', 'glow': '#d946ef',
+        'input_bg': '#380e28', 'fg': '#ffffff'
+    },
+    'TOXIC_GREEN': {
+        'bg_top': '#051a05', 'bg_bot': '#0f2a0f',
+        'accent': '#39ff14', 'glow': '#39ff14',
+        'input_bg': '#0e280e', 'fg': '#ffffff'
+    },
+    'GOLD_MATRIX': {
+        'bg_top': '#000000', 'bg_bot': '#0a0a0a',
+        'accent': '#ffd700', 'glow': '#ffd700',
+        'input_bg': '#1c1c1c', 'fg': '#ffffff'
+    }
+}
+
+class ParticleWidget(Widget):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.particles = []
+        Clock.schedule_interval(self.update_particles, 1.0 / 60.0)
+
+    def update_particles(self, dt):
+        with self.canvas:
+            self.canvas.clear()
+            # Draw bg
+            Color(rgba=get_color_from_hex('#00000000')) # Transparent base
+            
+            # Spawn logic
+            if len(self.particles) < 30:
+                self.particles.append({
+                    'x': random.randint(0, int(self.width or 400)),
+                    'y': random.randint(0, int(self.height or 800)),
+                    'vy': random.uniform(0.5, 2.0),
+                    'size': random.randint(2, 5),
+                    'alpha': random.uniform(0.1, 0.5)
+                })
+
+            for p in self.particles:
+                p['y'] += p['vy']
+                if p['y'] > self.height:
+                    p['y'] = 0
+                    p['x'] = random.randint(0, int(self.width))
+                
+                # Draw
+                Color(0.5, 0.8, 1, p['alpha'])
+                Ellipse(pos=(p['x'], p['y']), size=(p['size'], p['size']))
+
+class ScanningLaser(Widget):
+    laser_y = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.opacity = 0
+    
+    def scan(self, target_widget):
+        self.opacity = 1
+        self.width = target_widget.width
+        self.x = target_widget.x
         
-        # Main layout with minimalistic design
-        root = BoxLayout(orientation='vertical', padding=30, spacing=20)
+        anim = Animation(y=target_widget.top, duration=0) + \
+               Animation(y=target_widget.y, duration=0.8) + \
+               Animation(y=target_widget.top, duration=0.8) + \
+               Animation(opacity=0, duration=0.2)
+        anim.start(self)
+
+KV = """
+#:import get_color_from_hex kivy.utils.get_color_from_hex
+
+<ParticleWidget>:
+    canvas:
+        # Drawn in python
+
+<ScanningLaser>:
+    canvas:
+        Color:
+            rgba: 0, 1, 1, 0.8 # Cyan Laser
+        Line:
+            points: [self.x, self.y, self.x + self.width, self.y]
+            width: 2
+        # Glow
+        Color:
+            rgba: 0, 1, 1, 0.3
+        Rectangle:
+            pos: self.x, self.y - 10
+            size: self.width, 20
+
+
+<MainScreen>:
+    bg_color: '#050510'
+    accent_color: '#00f0ff'
+    
+    canvas.before:
+        Color:
+            rgba: get_color_from_hex(self.bg_color)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            
+    ParticleWidget:
+        id: particles
+        size_hint: 1, 1
+
+    BoxLayout:
+        orientation: 'vertical'
+        padding: 30
+        spacing: 20
         
-        # Canvas for background color
-        with root.canvas.before:
-            Color(0.95, 0.96, 0.98, 1)  # Soft off-white/grey background
-            self.rect = Rectangle(size=root.size, pos=root.pos)
-        root.bind(size=self._update_rect, pos=self._update_rect)
-
-        # Title Label
-        title_label = Label(
-            text="QR Generator",
-            font_size='28sp',
-            bold=True,
-            color=(0.2, 0.2, 0.2, 1),
-            size_hint_y=None,
-            height=60
-        )
-        root.add_widget(title_label)
+        # --- Theme Switcher Row ---
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            spacing: 10
+            Widget: # Spacer
+            Button:
+                text: "THEME"
+                size_hint_x: None
+                width: 100
+                background_color: 0,0,0,0
+                color: get_color_from_hex(root.accent_color)
+                on_release: root.cycle_theme()
+                canvas.before:
+                    Color:
+                        rgba: get_color_from_hex(root.accent_color)
+                    Line:
+                        rounded_rectangle: (self.x, self.y, self.width, self.height, 10)
+                        width: 1
         
-        # Text Input
-        self.text_input = TextInput(
-            hint_text="Enter text or URL here...",
-            multiline=False,
-            size_hint_y=None,
-            height=50,
-            background_normal='',
-            background_active='',
-            background_color=(1, 1, 1, 1),
-            foreground_color=(0.2, 0.2, 0.2, 1),
-            padding=(15, 15)
-        )
-        # Add simple styling to input
-        self.text_input.background_color = (1, 1, 1, 0)
-        self.text_input.canvas.before.add(Color(0.9, 0.9, 0.9, 1))
-        self.text_input.canvas.before.add(RoundedRectangle(pos=self.text_input.pos, size=self.text_input.size, radius=[10]))
-        self.text_input.bind(pos=self._update_input_canvas, size=self._update_input_canvas)
+        Label:
+            text: "Dhanvanth QR Code"
+            font_size: '32sp'
+            bold: True
+            color: get_color_from_hex(root.accent_color)
+            size_hint_y: None
+            height: 60
+            canvas.before:
+                Color:
+                    rgba: get_color_from_hex(root.accent_color)
+                Line:
+                    points: [self.center_x - 30, self.y, self.center_x + 30, self.y]
+                    width: 2
+
+        TextInput:
+            id: input_text
+            hint_text: "Enter Text or URL...."
+            size_hint_y: 0.2
+            font_size: '18sp'
+            background_color: 0,0,0,0
+            foreground_color: 1,1,1,1
+            cursor_color: get_color_from_hex(root.accent_color)
+            multiline: False
+            padding: [15, 15]
+            canvas.before:
+                Color:
+                    rgba: get_color_from_hex('#1e1b4b')
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [15]
+                Color:
+                    rgba: get_color_from_hex(root.accent_color)
+                Line:
+                    rounded_rectangle: (self.x, self.y, self.width, self.height, 15)
+                    width: 1
+
+        Button:
+            text: "INITIALIZE"
+            size_hint_y: None
+            height: 70
+            font_size: '20sp'
+            bold: True
+            color: 0, 0, 0, 1
+            background_color: 0,0,0,0
+            on_release: root.generate_qr()
+            canvas.before:
+                Color:
+                    rgba: get_color_from_hex(root.accent_color)
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [10]
+                Color: 
+                    rgba: 1, 1, 1, 0.2
+                RoundedRectangle:
+                    pos: self.x, self.y + self.height/2
+                    size: self.width, self.height/2
+                    radius: [10, 10, 0, 0]
+
+        FloatLayout:
+            id: qr_area
+            size_hint_y: 0.4
+            
+            Image:
+                id: qr_image
+                source: ''
+                opacity: 0
+                allow_stretch: True
+                size_hint: None, None
+                size: 250, 250
+                pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+
+            ScanningLaser:
+                id: laser
+                size_hint: None, None
+                height: 2
+                opacity: 0
+
+        Button:
+            id: save_btn
+            text: "DOWNLOAD"
+            size_hint_y: None
+            height: 0
+            opacity: 0
+            disabled: True
+            background_color: 0,0,0,0
+            color: get_color_from_hex('#ffffff')
+            on_release: root.save_qr()
+            canvas.before:
+                Color:
+                    rgba: get_color_from_hex('#10b981')
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [30]
+"""
+
+class MainScreen(FloatLayout):
+    bg_color = StringProperty('#050510')
+    accent_color = StringProperty('#00f0ff')
+    current_theme_idx = 0
+    theme_names = list(THEMES.keys())
+
+    def cycle_theme(self):
+        self.current_theme_idx = (self.current_theme_idx + 1) % len(self.theme_names)
+        t_name = self.theme_names[self.current_theme_idx]
+        theme = THEMES[t_name]
         
-        root.add_widget(self.text_input)
+        self.bg_color = theme['bg_top']
+        self.accent_color = theme['accent']
+        
+        # Animate change?
+        # For now direct property update triggers redraw
 
-        # Generate Button
-        gen_btn = Button(
-            text="Generate QR Code",
-            size_hint_y=None,
-            height=50,
-            background_normal='',
-            background_color=(0.4, 0.6, 0.8, 1), # Soft blue
-            color=(1, 1, 1, 1),
-            bold=True
-        )
-        gen_btn.bind(on_press=self.generate_qr)
-        root.add_widget(gen_btn)
-
-        # Space for QR Code
-        self.qr_image = Image(
-            size_hint=(1, 1),
-            allow_stretch=True
-        )
-        root.add_widget(self.qr_image)
-
-        # Save Button
-        save_btn = Button(
-            text="Save to Gallery",
-            size_hint_y=None,
-            height=50,
-            background_normal='',
-            background_color=(0.4, 0.8, 0.6, 1), # Soft green
-            color=(1, 1, 1, 1),
-            bold=True
-        )
-        save_btn.bind(on_press=self.save_qr)
-        root.add_widget(save_btn)
-
-        # Status Label (for messages)
-        self.status_label = Label(
-            text="",
-            size_hint_y=None,
-            height=30,
-            color=(0.4, 0.4, 0.4, 1),
-            font_size='14sp'
-        )
-        root.add_widget(self.status_label)
-
-        # Request Permissions on Android
-        if platform == 'android':
-            from android.permissions import request_permissions, Permission
-            request_permissions([Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
-
-        return root
-
-    def _update_rect(self, instance, value):
-        self.rect.pos = instance.pos
-        self.rect.size = instance.size
-
-    def _update_input_canvas(self, instance, value):
-        instance.canvas.before.clear()
-        with instance.canvas.before:
-            Color(1, 1, 1, 1)
-            RoundedRectangle(pos=instance.pos, size=instance.size, radius=[10])
-            Color(0.8, 0.8, 0.8, 1) # Border
-            # Simple border trick or just leave as is. kept simple.
-
-    def generate_qr(self, instance):
-        data = self.text_input.text.strip()
-        if not data:
-            self.status_label.text = "Please enter some text first!"
+    def generate_qr(self):
+        text = self.ids.input_text.text.strip()
+        if not text:
+            # Shake effect
+            anim = Animation(x=self.ids.input_text.x+10, duration=0.05) + Animation(x=self.ids.input_text.x, duration=0.05)
+            anim.start(self.ids.input_text)
             return
 
         try:
-            # Generate QR Code
-            qr = qrcode.QRCode(
-                version=1,
-                error_correction=qrcode.constants.ERROR_CORRECT_L,
-                box_size=10,
-                border=4,
-            )
-            qr.add_data(data)
+            # Generate logic (same as before)
+            qr = qrcode.QRCode(version=1, box_size=10, border=1)
+            qr.add_data(text)
             qr.make(fit=True)
+            
+            # Use current theme accent for QR? Or stick to standard
+            # Let's use Theme Accent for QR Fill!
+            fill_c = self.accent_color
+            if fill_c == '#00f0ff': fill_c = '#00a8b3' # Darker version for contrast? No, QR needs contrast.
+            # Best contrast is White background, Dark fill. 
+            # OR Dark background, Light fill.
+            # Let's do: Fill = Accent, Back = BG
+            
+            # Actually, standard scanners scan dark on light best.
+            # Let's do Dark Purple fill on White again for safety, standard looks Pro.
+            img = qr.make_image(fill_color="#101010", back_color="white").convert('RGBA')
 
-            img = qr.make_image(fill_color="black", back_color="white")
+            # --- Icon Logic (Rounded) ---
+            try:
+                if os.path.exists('icon.png'):
+                    from PIL import Image as PilImage, ImageDraw
+                    logo = PilImage.open('icon.png').convert("RGBA")
+                    basewidth = int(img.size[0] * 0.22)
+                    wpercent = (basewidth / float(logo.size[0]))
+                    hsize = int((float(logo.size[1]) * float(wpercent)))
+                    logo = logo.resize((basewidth, hsize), PilImage.Resampling.LANCZOS)
+                    
+                    mask = PilImage.new('L', logo.size, 0)
+                    draw = ImageDraw.Draw(mask)
+                    radius = int(min(logo.size) * 0.3) 
+                    draw.rounded_rectangle([(0, 0), logo.size], radius=radius, fill=255)
+                    
+                    rounded_logo = PilImage.new('RGBA', logo.size, (0, 0, 0, 0))
+                    rounded_logo.paste(logo, (0, 0), mask=mask)
+                    
+                    pos_x = (img.size[0] - logo.size[0]) // 2
+                    pos_y = (img.size[1] - logo.size[1]) // 2
+                    img.paste(rounded_logo, (pos_x, pos_y), rounded_logo)
+            except Exception as e:
+                print(e)
             
-            # Save to temporary file
-            self.temp_img_path = "temp_qr.png"
-            img.save(self.temp_img_path)
+            self.temp_path = os.path.abspath("temp_qr.png")
+            img.save(self.temp_path)
             
-            # Update Image Widget
-            self.qr_image.source = self.temp_img_path
-            self.qr_image.reload()
-            self.status_label.text = "QR Code Generated!"
+            # Reveal Animation
+            qr_img = self.ids.qr_image
+            qr_img.source = self.temp_path
+            qr_img.reload()
+            
+            # Reset state for anim
+            qr_img.opacity = 0
+            qr_img.size_hint = (None, None)
+            qr_img.size = (0, 0)
+            
+            # Pop up
+            anim = Animation(size=(250, 250), opacity=1, duration=0.6, t='out_back')
+            anim.start(qr_img)
+            
+            # Laser Scan
+            self.ids.laser.scan(qr_img)
+            
+            # Show Save
+            save = self.ids.save_btn
+            if save.height == 0:
+                anim_s = Animation(height=60, opacity=1, duration=0.5)
+                anim_s.start(save)
+                save.disabled = False
+
         except Exception as e:
-            self.status_label.text = f"Error: {str(e)}"
+            print(e)
 
-    def save_qr(self, instance):
-        if not hasattr(self, 'temp_img_path') or not os.path.exists(self.temp_img_path):
-            self.status_label.text = "Generate a QR code first!"
-            return
-
+    def save_qr(self):
         try:
             if platform == 'android':
                 from android.storage import primary_external_storage_path
                 from shutil import copyfile
-                
-                # Define path: usually /storage/emulated/0/DCIM/ or Pictures
-                dir_path = os.path.join(primary_external_storage_path(), 'DCIM', 'DhanvanthQRCode')
-                if not os.path.exists(dir_path):
-                    os.makedirs(dir_path)
-                
+                dir_path = os.path.join(primary_external_storage_path(), 'DCIM', 'NeonQR')
+                if not os.path.exists(dir_path): os.makedirs(dir_path)
                 filename = f"QR_{len(os.listdir(dir_path)) + 1}.png"
-                dest_path = os.path.join(dir_path, filename)
-                
-                copyfile(self.temp_img_path, dest_path)
-                self.status_label.text = f"Saved to {dest_path}"
-                
-                # Optionally scan media so it shows up in Gallery immediately
-                # (Requires jnius usually, keeping it simple for now)
+                copyfile(self.temp_path, os.path.join(dir_path, filename))
             else:
-                # Desktop Save
                 import shutil
-                dest_path = os.path.join(os.getcwd(), f"Saved_QR_{len(os.listdir(os.getcwd()))}.png")
-                shutil.copy(self.temp_img_path, dest_path)
-                self.status_label.text = f"Saved to {os.path.basename(dest_path)}"
-                
+                shutil.copy(self.temp_path, f"Saved_QR_{random.randint(100,999)}.png")
+            
+            self.ids.save_btn.text = "SAVED!"
+            Clock.schedule_once(lambda dt: setattr(self.ids.save_btn, 'text', "DOWNLOAD"), 2)
         except Exception as e:
-            self.status_label.text = f"Save failed: {str(e)}"
+            self.ids.save_btn.text = "ERROR"
+
+class QRCodeApp(App):
+    def build(self):
+        self.icon = 'icon.png'
+        Builder.load_string(KV)
+        return MainScreen()
 
 if __name__ == '__main__':
     QRCodeApp().run()
