@@ -20,11 +20,17 @@ from kivy.uix.camera import Camera
 import qrcode
 import os
 import random
-import cv2
-from pyzbar.pyzbar import decode
-import numpy as np
 from PIL import Image as PilImage, ImageDraw, ImageFont
 from kivy.utils import platform
+
+# Optional Scanning Dependencies (Desktop Only)
+try:
+    from pyzbar.pyzbar import decode
+    import numpy as np
+    import cv2
+    HAS_SCANNER = True
+except ImportError:
+    HAS_SCANNER = False
 
 # Set a mobile-friendly size for desktop testing
 if platform not in ('android', 'ios'):
@@ -592,6 +598,10 @@ class ScannerScreen(Screen):
         self.ids.cam_laser.opacity = 0
 
     def detect_qr(self, dt):
+        if not HAS_SCANNER:
+            self.ids.result_label.text = "Scanning not supported on Android (yet)"
+            return
+
         # We need to grab texture from camera and pass to pyzbar
         cam = self.ids.camera
         if not cam.texture:
@@ -627,6 +637,15 @@ class ScannerScreen(Screen):
 class QRCodeApp(App):
     def build(self):
         self.icon = 'icon.png'
+        
+        if platform == 'android':
+            from android.permissions import request_permissions, Permission
+            request_permissions([
+                Permission.CAMERA, 
+                Permission.WRITE_EXTERNAL_STORAGE, 
+                Permission.READ_EXTERNAL_STORAGE
+            ])
+            
         Builder.load_string(KV)
         
         sm = ScreenManager(transition=FadeTransition())
