@@ -41,6 +41,12 @@ jobs:
           pip3 install --upgrade pip setuptools wheel
           pip3 install buildozer cython==0.29.33 python-for-android==2024.01.21
 
+      # Force JDK 17 (prevents gradle crash)
+      - name: Force JDK 17
+        run: |
+          echo "JAVA_HOME=/usr/lib/jvm/temurin-17-jdk-amd64" >> $GITHUB_ENV
+          echo "/usr/lib/jvm/temurin-17-jdk-amd64/bin" >> $GITHUB_PATH
+
       # Build the APK
       - name: Build APK
         run: |
