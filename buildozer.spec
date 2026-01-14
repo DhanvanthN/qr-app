@@ -32,7 +32,7 @@ version = 0.1
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,pillow,qrcode,opencv,pyzbar
+requirements = python3,kivy,pillow,qrcode
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -158,4 +158,5 @@ warn_on_root = 0
 #    [app:buildozer.exclude_patterns]
 #    *.spec
 android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
+
 android.sdk_path = /usr/local/lib/android/sdk
