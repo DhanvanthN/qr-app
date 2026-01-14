@@ -12,17 +12,41 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # Fix for standard buildozer action permissions
-      - name: Fix permissions
+      - name: Install System Dependencies
         run: |
-          sudo chown -R $USER:$USER $GITHUB_WORKSPACE
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-pip \
+            build-essential \
+            git \
+            python3 \
+            python3-dev \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev \
+            libportmidi-dev \
+            libswscale-dev \
+            libavformat-dev \
+            libavcodec-dev \
+            zlib1g-dev \
+            libjpeg-dev \
+            libfreetype6-dev \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            libffi-dev \
+            libssl-dev
 
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action-v1@v1
-        id: buildozer
-        with:
-          command: buildozer android debug
-          buildozer_version: master
+      - name: Install Buildozer
+        run: |
+            pip3 install --upgrade buildozer cython==0.29.33 virtualenv
+
+      - name: Build APK
+        run: |
+          yes | buildozer android debug
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
