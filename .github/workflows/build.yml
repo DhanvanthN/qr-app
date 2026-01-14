@@ -38,7 +38,12 @@ jobs:
             libtool \
             pkg-config \
             libffi-dev \
-            libssl-dev
+            libssl-dev \
+            libltdl-dev
+
+      - name: Upgrade Setup Tools
+        run: |
+            pip3 install --upgrade setuptools wheel
 
       - name: Install Buildozer
         run: |
