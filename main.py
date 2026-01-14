@@ -8,16 +8,22 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
+from kivy.uix.screenmanager import ScreenManager, Screen, FadeTransition
 from kivy.core.window import Window
 from kivy.utils import get_color_from_hex
-from kivy.graphics import Color, Ellipse, Rectangle, Line, RoundedRectangle
+from kivy.graphics import Color, Ellipse, Rectangle, Line, RoundedRectangle, SmoothLine
 from kivy.clock import Clock
 from kivy.animation import Animation
 from kivy.metrics import dp
-from kivy.properties import ListProperty, StringProperty, NumericProperty
+from kivy.properties import ListProperty, StringProperty, NumericProperty, ObjectProperty
+from kivy.uix.camera import Camera
 import qrcode
 import os
 import random
+import cv2
+from pyzbar.pyzbar import decode
+import numpy as np
+from PIL import Image as PilImage, ImageDraw, ImageFont
 from kivy.utils import platform
 
 # Set a mobile-friendly size for desktop testing
@@ -119,8 +125,21 @@ KV = """
             pos: self.x, self.y - 10
             size: self.width, 20
 
+<FancyButton@Button>:
+    background_color: 0,0,0,0
+    color: 1,1,1,1
+    font_size: '16sp'
+    bold: True
+    canvas.before:
+        Color:
+            rgba: get_color_from_hex(self.bg_c) if hasattr(self, 'bg_c') else (0,0,0,0)
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [10]
 
-<MainScreen>:
+<GeneratorScreen>:
+    name: 'generator'
     bg_color: '#050510'
     accent_color: '#00f0ff'
     
@@ -138,13 +157,27 @@ KV = """
     BoxLayout:
         orientation: 'vertical'
         padding: 30
-        spacing: 20
+        spacing: 15
         
-        # --- Theme Switcher Row ---
+        # --- Top Bar ---
         BoxLayout:
             size_hint_y: None
             height: 40
             spacing: 10
+            Button:
+                text: "SCANNER >"
+                size_hint_x: None
+                width: 100
+                background_color: 0,0,0,0
+                color: get_color_from_hex(root.accent_color)
+                on_release: app.root.current = 'scanner'
+                canvas.before:
+                    Color:
+                        rgba: get_color_from_hex(root.accent_color)
+                    Line:
+                        rounded_rectangle: (self.x, self.y, self.width, self.height, 10)
+                        width: 1
+
             Widget: # Spacer
             Button:
                 text: "THEME"
@@ -162,11 +195,11 @@ KV = """
         
         Label:
             text: "Dhanvanth QR Code"
-            font_size: '32sp'
+            font_size: '28sp'
             bold: True
             color: get_color_from_hex(root.accent_color)
             size_hint_y: None
-            height: 60
+            height: 50
             canvas.before:
                 Color:
                     rgba: get_color_from_hex(root.accent_color)
@@ -174,34 +207,64 @@ KV = """
                     points: [self.center_x - 30, self.y, self.center_x + 30, self.y]
                     width: 2
 
-        TextInput:
-            id: input_text
-            hint_text: "Enter Text or URL...."
-            size_hint_y: 0.2
-            font_size: '18sp'
-            background_color: 0,0,0,0
-            foreground_color: 1,1,1,1
-            cursor_color: get_color_from_hex(root.accent_color)
-            multiline: False
-            padding: [15, 15]
-            canvas.before:
-                Color:
-                    rgba: get_color_from_hex('#1e1b4b')
-                RoundedRectangle:
-                    pos: self.pos
-                    size: self.size
-                    radius: [15]
-                Color:
-                    rgba: get_color_from_hex(root.accent_color)
-                Line:
-                    rounded_rectangle: (self.x, self.y, self.width, self.height, 15)
-                    width: 1
+        # Inputs
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_y: None
+            height: 140
+            spacing: 10
+
+            TextInput:
+                id: input_text
+                hint_text: "Enter Text or URL...."
+                size_hint_y: 1
+                font_size: '16sp'
+                background_color: 0,0,0,0
+                foreground_color: 1,1,1,1
+                cursor_color: get_color_from_hex(root.accent_color)
+                multiline: False
+                padding: [15, 15]
+                canvas.before:
+                    Color:
+                        rgba: get_color_from_hex('#1e1b4b')
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [10]
+                    Color:
+                        rgba: get_color_from_hex(root.accent_color)
+                    Line:
+                        rounded_rectangle: (self.x, self.y, self.width, self.height, 10)
+                        width: 1
+
+            TextInput:
+                id: input_caption
+                hint_text: "Caption (Optional)...."
+                size_hint_y: 1
+                font_size: '16sp'
+                background_color: 0,0,0,0
+                foreground_color: 1,1,1,1
+                cursor_color: get_color_from_hex(root.accent_color)
+                multiline: False
+                padding: [15, 15]
+                canvas.before:
+                    Color:
+                        rgba: get_color_from_hex('#1e1b4b')
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [10]
+                    Color:
+                        rgba: get_color_from_hex(root.accent_color)
+                    Line:
+                        rounded_rectangle: (self.x, self.y, self.width, self.height, 10)
+                        width: 1
 
         Button:
             text: "INITIALIZE"
             size_hint_y: None
-            height: 70
-            font_size: '20sp'
+            height: 50
+            font_size: '18sp'
             bold: True
             color: 0, 0, 0, 1
             background_color: 0,0,0,0
@@ -213,16 +276,10 @@ KV = """
                     pos: self.pos
                     size: self.size
                     radius: [10]
-                Color: 
-                    rgba: 1, 1, 1, 0.2
-                RoundedRectangle:
-                    pos: self.x, self.y + self.height/2
-                    size: self.width, self.height/2
-                    radius: [10, 10, 0, 0]
 
         FloatLayout:
             id: qr_area
-            size_hint_y: 0.4
+            # size_hint_y: 0.4
             
             Image:
                 id: qr_image
@@ -256,13 +313,117 @@ KV = """
                     pos: self.pos
                     size: self.size
                     radius: [30]
+
+<ScannerScreen>:
+    name: 'scanner'
+    bg_color: '#050510'
+    accent_color: '#00f0ff'
+    
+    canvas.before:
+        Color:
+            rgba: get_color_from_hex(self.bg_color)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    BoxLayout:
+        orientation: 'vertical'
+        
+        # Header
+        BoxLayout:
+            size_hint_y: None
+            height: 60
+            padding: 10
+            spacing: 10
+            canvas.before:
+                Color:
+                    rgba: 0,0,0,0.5
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            
+            Button:
+                text: "< BACK"
+                size_hint_x: None
+                width: 80
+                background_color: 0,0,0,0
+                color: get_color_from_hex(root.accent_color)
+                on_release: 
+                    app.root.current = 'generator'
+                    root.stop_camera()
+            
+            Label:
+                text: "SCANNER"
+                bold: True
+                color: get_color_from_hex(root.accent_color)
+        
+        # Camera Area
+        FloatLayout:
+            id: cam_container
+            
+            Camera:
+                id: camera
+                resolution: (640, 480)
+                play: False
+                allow_stretch: True
+                keep_ratio: True
+                size_hint: 1, 1
+                pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+
+            ScanningLaser:
+                id: cam_laser
+                x: camera.x
+                width: camera.width
+                y: camera.top
+                opacity: 0
+
+        # Controls & Result
+        BoxLayout:
+            orientation: 'vertical'
+            size_hint_y: None
+            height: 150
+            padding: 20
+            spacing: 10
+            canvas.before:
+                Color:
+                    rgba: 0.1, 0.1, 0.2, 1
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [20, 20, 0, 0]
+
+            Label:
+                id: result_label
+                text: "Point at a QR Code"
+                color: 1, 1, 1, 0.8
+                font_size: '14sp'
+                text_size: self.size
+                halign: 'center'
+                valign: 'middle'
+
+            Button:
+                id: scan_toggle
+                text: "START SCAN"
+                background_color: 0,0,0,0
+                color: 0,0,0,1
+                bold: True
+                on_release: root.toggle_scan()
+                canvas.before:
+                    Color:
+                        rgba: get_color_from_hex(root.accent_color)
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [10]
+
 """
 
-class MainScreen(FloatLayout):
+class GeneratorScreen(Screen):
     bg_color = StringProperty('#050510')
     accent_color = StringProperty('#00f0ff')
     current_theme_idx = 0
     theme_names = list(THEMES.keys())
+    temp_path = StringProperty('')
 
     def cycle_theme(self):
         self.current_theme_idx = (self.current_theme_idx + 1) % len(self.theme_names)
@@ -271,12 +432,11 @@ class MainScreen(FloatLayout):
         
         self.bg_color = theme['bg_top']
         self.accent_color = theme['accent']
-        
-        # Animate change?
-        # For now direct property update triggers redraw
 
     def generate_qr(self):
         text = self.ids.input_text.text.strip()
+        caption = self.ids.input_caption.text.strip()
+        
         if not text:
             # Shake effect
             anim = Animation(x=self.ids.input_text.x+10, duration=0.05) + Animation(x=self.ids.input_text.x, duration=0.05)
@@ -284,27 +444,16 @@ class MainScreen(FloatLayout):
             return
 
         try:
-            # Generate logic (same as before)
+            # Generate QR
             qr = qrcode.QRCode(version=1, box_size=10, border=1)
             qr.add_data(text)
             qr.make(fit=True)
             
-            # Use current theme accent for QR? Or stick to standard
-            # Let's use Theme Accent for QR Fill!
-            fill_c = self.accent_color
-            if fill_c == '#00f0ff': fill_c = '#00a8b3' # Darker version for contrast? No, QR needs contrast.
-            # Best contrast is White background, Dark fill. 
-            # OR Dark background, Light fill.
-            # Let's do: Fill = Accent, Back = BG
-            
-            # Actually, standard scanners scan dark on light best.
-            # Let's do Dark Purple fill on White again for safety, standard looks Pro.
             img = qr.make_image(fill_color="#101010", back_color="white").convert('RGBA')
 
             # --- Icon Logic (Rounded) ---
             try:
                 if os.path.exists('icon.png'):
-                    from PIL import Image as PilImage, ImageDraw
                     logo = PilImage.open('icon.png').convert("RGBA")
                     basewidth = int(img.size[0] * 0.22)
                     wpercent = (basewidth / float(logo.size[0]))
@@ -323,8 +472,36 @@ class MainScreen(FloatLayout):
                     pos_y = (img.size[1] - logo.size[1]) // 2
                     img.paste(rounded_logo, (pos_x, pos_y), rounded_logo)
             except Exception as e:
-                print(e)
-            
+                print(f"Icon error: {e}")
+
+            # --- Caption Logic ---
+            if caption:
+                # Add extra space at bottom for caption
+                # Approximate font size based on image width
+                font_size = int(img.size[0] * 0.08)
+                extra_height = font_size + 20
+                
+                new_img = PilImage.new("RGBA", (img.size[0], img.size[1] + extra_height), "white")
+                new_img.paste(img, (0, 0))
+                
+                draw = ImageDraw.Draw(new_img)
+                # Try to load a font, fallback to default
+                try:
+                    font = ImageFont.truetype("arial.ttf", font_size)
+                except:
+                    font = ImageFont.load_default()
+                
+                # Center text
+                try:
+                    text_bbox = draw.textbbox((0,0), caption, font=font)
+                    text_w = text_bbox[2] - text_bbox[0]
+                except AttributeError:
+                    # Older Pillow
+                    text_w, text_h = draw.textsize(caption, font=font)
+
+                draw.text(((new_img.size[0] - text_w) / 2, img.size[1] + 5), caption, fill="black", font=font)
+                img = new_img
+
             self.temp_path = os.path.abspath("temp_qr.png")
             img.save(self.temp_path)
             
@@ -353,14 +530,14 @@ class MainScreen(FloatLayout):
                 save.disabled = False
 
         except Exception as e:
-            print(e)
+            print(f"Generation error: {e}")
 
     def save_qr(self):
         try:
             if platform == 'android':
                 from android.storage import primary_external_storage_path
                 from shutil import copyfile
-                dir_path = os.path.join(primary_external_storage_path(), 'DCIM', 'NeonQR')
+                dir_path = os.path.join(primary_external_storage_path(), 'DCIM', 'Dhanvanth QR')
                 if not os.path.exists(dir_path): os.makedirs(dir_path)
                 filename = f"QR_{len(os.listdir(dir_path)) + 1}.png"
                 copyfile(self.temp_path, os.path.join(dir_path, filename))
@@ -372,12 +549,90 @@ class MainScreen(FloatLayout):
             Clock.schedule_once(lambda dt: setattr(self.ids.save_btn, 'text', "DOWNLOAD"), 2)
         except Exception as e:
             self.ids.save_btn.text = "ERROR"
+            print(f"Save error: {e}")
+
+class ScannerScreen(Screen):
+    bg_color = StringProperty('#050510')
+    accent_color = StringProperty('#00f0ff')
+    is_scanning = False
+    
+    def on_enter(self):
+        # Optional: Auto-start? No, user might prefer manual start
+        pass
+        
+    def on_leave(self):
+        self.stop_camera()
+        
+    def toggle_scan(self):
+        cam = self.ids.camera
+        if not self.is_scanning:
+            # Start
+            cam.play = True
+            self.is_scanning = True
+            self.ids.scan_toggle.text = "STOP SCAN"
+            self.ids.result_label.text = "Scanning..."
+            Clock.schedule_interval(self.detect_qr, 1.0/30.0) # 30 FPS check
+            
+            # Anim laser
+            self.ids.cam_laser.opacity = 1
+            anim = Animation(y=self.ids.cam_container.y, duration=1.0) + \
+                   Animation(y=self.ids.cam_container.top, duration=1.0)
+            anim.repeat = True
+            anim.start(self.ids.cam_laser)
+            
+        else:
+            self.stop_camera()
+
+    def stop_camera(self):
+        self.ids.camera.play = False
+        self.is_scanning = False
+        self.ids.scan_toggle.text = "START SCAN"
+        Clock.unschedule(self.detect_qr)
+        Animation.cancel_all(self.ids.cam_laser)
+        self.ids.cam_laser.opacity = 0
+
+    def detect_qr(self, dt):
+        # We need to grab texture from camera and pass to pyzbar
+        cam = self.ids.camera
+        if not cam.texture:
+            return
+
+        # Get texture pixels
+        # texture.pixels is a byte buffer
+        # For pyzbar we need PIL image or raw bytes
+        
+        try:
+            # Kivy texture to buffer
+            w, h = cam.texture.size
+            pixels = cam.texture.pixels
+            
+            # Convert to PIL Image for easier debugging/compatibility
+            # Kivy default texture is RGBA
+            pil_image = PilImage.frombytes(mode='RGBA', size=(w, h), data=pixels)
+            
+            # Pyzbar requires list of decoded objects
+            decoded_objects = decode(pil_image)
+            
+            for obj in decoded_objects:
+                data = obj.data.decode("utf-8")
+                self.ids.result_label.text = f"FOUND: {data}"
+                # Optionally vibrate or verify
+                # Stop scanning if found?
+                # self.stop_camera()
+                return
+
+        except Exception as e:
+            print(f"Scan Error: {e}")
 
 class QRCodeApp(App):
     def build(self):
         self.icon = 'icon.png'
         Builder.load_string(KV)
-        return MainScreen()
+        
+        sm = ScreenManager(transition=FadeTransition())
+        sm.add_widget(GeneratorScreen(name='generator'))
+        sm.add_widget(ScannerScreen(name='scanner'))
+        return sm
 
 if __name__ == '__main__':
     QRCodeApp().run()
