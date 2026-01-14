@@ -493,14 +493,20 @@ class GeneratorScreen(Screen):
                 draw = ImageDraw.Draw(new_img)
                 # Try to load a font, fallback to default
                 try:
-                    font = ImageFont.truetype("arial.ttf", font_size)
-                except:
+                    font_path = "arial.ttf"
+                    if platform == 'android':
+                        font_path = "/system/fonts/Roboto-Regular.ttf"
+                    font = ImageFont.truetype(font_path, font_size)
+                except Exception as e:
+                    print(f"Font load failed: {e}")
                     font = ImageFont.load_default()
                 
                 # Center text
                 try:
-                    text_bbox = draw.textbbox((0,0), caption, font=font)
-                    text_w = text_bbox[2] - text_bbox[0]
+                    # Pillow 10+
+                    left, top, right, bottom = draw.textbbox((0,0), caption, font=font)
+                    text_w = right - left
+                    text_h = bottom - top
                 except AttributeError:
                     # Older Pillow
                     text_w, text_h = draw.textsize(caption, font=font)
