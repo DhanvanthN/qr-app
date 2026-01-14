@@ -217,7 +217,7 @@ KV = """
         BoxLayout:
             orientation: 'vertical'
             size_hint_y: None
-            height: 140
+            height: 180
             spacing: 10
 
             TextInput:
