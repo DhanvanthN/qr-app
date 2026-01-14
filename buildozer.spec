@@ -1,8 +1,8 @@
 [app]
 
 # (str) Title of your application
-title = Dhanvanth's QR Code
-
+title = Dhanvanth QR Code
+p4a.use_hostpython = true
 # (str) Package name
 package.name = dhanvanthqrcode
 
